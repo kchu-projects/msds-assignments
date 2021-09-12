@@ -1,0 +1,584 @@
+---
+title: "NYPD Shooting Incidents by Borough"
+author: "K. Chu"
+date: "9/4/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I thought about what would be an interesting question to answer, and I thought
+that finding the most dangerous borough and the safest borough would be 
+something I wanted to know.
+
+```{r import-data}
+library(tidyverse)
+library(lubridate)
+
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+
+incidents <- read_csv(url_in)
+summary(incidents)
+```
+
+I have gotten my data from the City of New York's data website. This is their
+shooting incident data, as recorded from 2006 all the way until the end of 2020.
+
+It contains quite a lot of information, such as some information about the
+perpetrator and the victim. There are fields for the race, age group, and sex of
+both victims and perpetrators. It also includes whether the victim was murdered.
+
+It also includes location information about each shooting, even up to latitude 
+and longitude! It even includes a description of the location, as well as the
+precinct and jurisdiction code of each location where the shootings take place.
+
+Of course, it also includes the time and date of each shooting.
+
+```{r clean-data}
+incidents <-incidents %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE),  # convert OCCUR_DATE to date
+         BORO = factor(BORO),
+         LOCATION_DESC = factor(LOCATION_DESC),
+         STATISTICAL_MURDER_FLAG = factor(STATISTICAL_MURDER_FLAG),
+         PERP_AGE_GROUP = factor(PERP_AGE_GROUP),
+         PERP_SEX = factor(PERP_SEX),
+         PERP_RACE = factor(PERP_RACE),
+         VIC_AGE_GROUP = factor(VIC_AGE_GROUP),
+         VIC_SEX = factor(VIC_SEX),
+         VIC_RACE = factor(VIC_RACE)) %>%
+  # remove unneeded columns
+  select(-c(INCIDENT_KEY, PRECINCT, JURISDICTION_CODE,
+            X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat)) %>%
+  # replace the NA entries as "unknown" or some variation
+  replace_na(list(LOCATION_DESC="NONE",
+                  PERP_AGE_GROUP="UNKNOWN",
+                  PERP_SEX="U",
+                  PERP_RACE="UNKNOWN"))
+
+summary(incidents)
+```
+
+There are fields where the entries are blank. Examples include:
+
+- LOCATION_DESC
+- PERP_AGE_GROUP
+- PERP_SEX
+- PERP_RACE
+
+What I did was to change the blank entries to reflect the same value used to 
+denote an unknown value.
+
+```{r transform-data}
+# sort by date
+incidents <- incidents %>%
+  arrange(OCCUR_DATE)
+
+# use month instead of specific day
+incidents <- incidents %>%
+  mutate(Occur_Month = floor_date(OCCUR_DATE, "month"))
+
+incidents$rec <- 1
+
+# create a column for cumulative shootings by borough
+with_cumulative_cases <- incidents %>%
+  group_by(BORO) %>%
+  mutate(Cumulative_Shootings = cumsum(rec)) %>%
+  select(-rec) %>%
+  ungroup()
+
+# get the number of cumulative shootings per month by borough
+with_cumulative_cases <- with_cumulative_cases %>%
+  group_by(Occur_Month, BORO) %>%
+  top_n(1, Cumulative_Shootings) %>%
+  select(c(Occur_Month, BORO, Cumulative_Shootings)) %>%
+  ungroup()
+
+# divide the cases by borough
+queens <- with_cumulative_cases %>%
+  filter(BORO == "QUEENS")
+
+manhattan <- with_cumulative_cases %>%
+  filter(BORO == "MANHATTAN")
+
+brooklyn <- with_cumulative_cases %>%
+  filter(BORO == "BROOKLYN")
+
+bronx <- with_cumulative_cases %>%
+  filter(BORO == "BRONX")
+
+staten_island <- with_cumulative_cases %>%
+  filter(BORO == "STATEN ISLAND")
+```
+
+Here, I tried grouping the shootings by borough. I also realized that I didn't
+quite need information about the victim and the perpetrator, so I simply removed
+their columns.
+
+```{r visualize-data}
+
+queens %>%
+  ggplot(aes(x = Occur_Month, y = Cumulative_Shootings)) +
+  geom_line(aes(color="Queens")) +
+  geom_point(aes(color="Queens")) +
+  
+  geom_line(data=manhattan, aes(color="Manhattan")) +
+  geom_point(data=manhattan, aes(color="Manhattan")) +
+  
+  geom_line(data=brooklyn, aes(color="Brooklyn")) +
+  geom_point(data=brooklyn, aes(color="Brooklyn")) +
+  
+  geom_line(data=bronx, aes(color="Bronx")) +
+  geom_point(data=bronx, aes(color="Bronx")) +
+  
+  geom_line(data=staten_island, aes(color="Staten Island")) +
+  geom_point(data=staten_island, aes(color="Staten Island")) +
+  
+  scale_y_log10() +
+  theme(legend.position="bottom",
+        axis.text.x = element_text(angle=90)) +
+  labs(title="Total Shootings in New York by Borough",
+       y="Total shootings",
+       x="Month")
+
+```
+
+The graphs show that Bronx and Brooklyn are the places with the most number of
+shooting incidents while Staten Island has the least number of shooting
+incidents. It has led me to ask if Bronx and Brooklyn truly are the most
+dangerous places in New York and if Staten Island is the safest place in 
+New York.
+
+```{r add-second-analysis}
+# add new shootings column
+
+queens <- queens %>%
+  mutate(New_Shootings = Cumulative_Shootings - lag(Cumulative_Shootings))
+queens$New_Shootings <- ifelse(is.na(queens$New_Shootings), 
+                               queens$Cumulative_Shootings,
+                               queens$New_Shootings)
+
+manhattan <- manhattan %>%
+  mutate(New_Shootings = Cumulative_Shootings - lag(Cumulative_Shootings))
+manhattan$New_Shootings <- ifelse(is.na(manhattan$New_Shootings), 
+                               manhattan$Cumulative_Shootings,
+                               manhattan$New_Shootings)
+
+brooklyn <- brooklyn %>%
+  mutate(New_Shootings = Cumulative_Shootings - lag(Cumulative_Shootings))
+brooklyn$New_Shootings <- ifelse(is.na(brooklyn$New_Shootings), 
+                               brooklyn$Cumulative_Shootings,
+                               brooklyn$New_Shootings)
+
+bronx <- bronx %>%
+  mutate(New_Shootings = Cumulative_Shootings - lag(Cumulative_Shootings))
+bronx$New_Shootings <- ifelse(is.na(bronx$New_Shootings), 
+                               bronx$Cumulative_Shootings,
+                               bronx$New_Shootings)
+
+staten_island <- staten_island %>%
+  mutate(New_Shootings = Cumulative_Shootings - lag(Cumulative_Shootings))
+staten_island$New_Shootings <- ifelse(is.na(staten_island$New_Shootings), 
+                               staten_island$Cumulative_Shootings,
+                               staten_island$New_Shootings)
+
+```
+
+Here, I added a new column for new shootings. I also made sure that there were
+no empty fields. I noticed that the first entry was empty because there was no
+value for lag(Cumulative_Shootings) at that point. For this, I simply copied
+over the Cumulative_Shootings value for the first month.
+
+```{r visualize-second-analysis}
+
+queens %>%
+  ggplot(aes(x = Occur_Month, y = New_Shootings)) +
+  geom_line(aes(color="Queens")) +
+  geom_point(aes(color="Queens")) +
+  
+  geom_line(data=manhattan, aes(color="Manhattan")) +
+  geom_point(data=manhattan, aes(color="Manhattan")) +
+  
+  geom_line(data=brooklyn, aes(color="Brooklyn")) +
+  geom_point(data=brooklyn, aes(color="Brooklyn")) +
+  
+  geom_line(data=bronx, aes(color="Bronx")) +
+  geom_point(data=bronx, aes(color="Bronx")) +
+  
+  geom_line(data=staten_island, aes(color="Staten Island")) +
+  geom_point(data=staten_island, aes(color="Staten Island")) +
+  
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="New Monthly Shootings in New York by Borough",
+       y="New Monthly Shootings",
+       x="Month")
+
+
+```
+
+According to this graph, there appear to be several sharp spikes in shooting
+incidents in Brooklyn and Bronx. The other three boroughs, Manhattan, Queens,
+and Staten Island, appear to be more muted by comparison.
+
+However, there is an even higher surge in shooting incidents in 2020. This 
+increase is particularly sharp in Brooklyn and Bronx. What caused this spike?
+This sharp increase is unprecedented, especially in Brooklyn.
+
+```{r create-monthly-model-queens}
+
+# queens monthly model
+mod_queens <- lm(New_Shootings ~ Occur_Month, data=queens)
+summary(mod_queens)
+
+queens_w_pred <- queens %>% mutate(pred = predict(mod_queens))
+
+queens_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Month, y = New_Shootings), color = "blue") + 
+  geom_point(aes(x = Occur_Month, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Queens New Monthly Shootings: Actual vs Model",
+       y="New Monthly Shootings",
+       x="Month")
+
+```
+
+```{r create-monthly-model-manhattan}
+
+# manhattan monthly model
+mod_manhattan <- lm(New_Shootings ~ Occur_Month, data=manhattan)
+summary(mod_manhattan)
+
+manhattan_w_pred <- manhattan %>% mutate(pred = predict(mod_manhattan))
+
+manhattan_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Month, y = New_Shootings), color = "blue") + 
+  geom_point(aes(x = Occur_Month, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Manhattan New Monthly Shootings: Actual vs Model",
+       y="New Monthly Shootings",
+       x="Month")
+
+```
+
+```{r create-monthly-model-brooklyn}
+
+# brooklyn monthly model
+mod_brooklyn <- lm(New_Shootings ~ Occur_Month, data=brooklyn)
+summary(mod_brooklyn)
+
+brooklyn_w_pred <- brooklyn %>% mutate(pred = predict(mod_brooklyn))
+
+brooklyn_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Month, y = New_Shootings), color = "blue") + 
+  geom_point(aes(x = Occur_Month, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Brooklyn New Monthly Shootings: Actual vs Model",
+       y="New Monthly Shootings",
+       x="Month")
+
+```
+
+```{r create-monthly-model-bronx}
+
+# bronx monthly model
+mod_bronx <- lm(New_Shootings ~ Occur_Month, data=bronx)
+summary(mod_bronx)
+
+bronx_w_pred <- bronx %>% mutate(pred = predict(mod_bronx))
+
+bronx_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Month, y = New_Shootings), color = "blue") + 
+  geom_point(aes(x = Occur_Month, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Bronx New Monthly Shootings: Actual vs Model",
+       y="New Monthly Shootings",
+       x="Month")
+
+```
+
+```{r create-monthly-model-staten-island}
+
+# staten island monthly model
+mod_staten_island <- lm(New_Shootings ~ Occur_Month, data=staten_island)
+summary(mod_staten_island)
+
+staten_island_w_pred <- staten_island %>% mutate(pred = predict(mod_staten_island))
+
+staten_island_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Month, y = New_Shootings), color = "blue") + 
+  geom_point(aes(x = Occur_Month, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Staten Island New Monthly Shootings: Actual vs Model",
+       y="New Monthly Shootings",
+       x="Month")
+
+```
+
+I try to make a linear model for each of the boroughs.
+
+A linear model isn't particularly accurate when trying to predict the number of
+shootings per month. How would our graphs look like when we use yearly data
+instead?
+
+```{r add-third-analysis}
+
+# queens
+queens_by_year <- queens %>%
+  mutate(Occur_Year = floor_date(Occur_Month, "year"))
+
+queens_by_year <- queens_by_year %>%
+  group_by(Occur_Year, BORO) %>%
+  top_n(1, Cumulative_Shootings) %>%
+  select(c(Occur_Year, BORO, Cumulative_Shootings)) %>%
+  ungroup()
+
+queens_by_year <- queens_by_year %>%
+  mutate(Cumulative_Shootings_By_Year = Cumulative_Shootings)
+
+queens_by_year <- queens_by_year %>%
+  mutate(New_Shootings_By_Year = Cumulative_Shootings_By_Year - lag(Cumulative_Shootings_By_Year))
+queens_by_year$New_Shootings_By_Year <- ifelse(is.na(queens_by_year$New_Shootings_By_Year), 
+                                               queens_by_year$Cumulative_Shootings_By_Year,
+                                               queens_by_year$New_Shootings_By_Year)
+
+# manhattan
+manhattan_by_year <- manhattan %>%
+  mutate(Occur_Year = floor_date(Occur_Month, "year"))
+
+manhattan_by_year <- manhattan_by_year %>%
+  group_by(Occur_Year, BORO) %>%
+  top_n(1, Cumulative_Shootings) %>%
+  select(c(Occur_Year, BORO, Cumulative_Shootings)) %>%
+  ungroup()
+
+manhattan_by_year <- manhattan_by_year %>%
+  mutate(Cumulative_Shootings_By_Year = Cumulative_Shootings)
+
+manhattan_by_year <- manhattan_by_year %>%
+  mutate(New_Shootings_By_Year = Cumulative_Shootings_By_Year - lag(Cumulative_Shootings_By_Year))
+manhattan_by_year$New_Shootings_By_Year <- ifelse(is.na(manhattan_by_year$New_Shootings_By_Year), 
+                                                  manhattan_by_year$Cumulative_Shootings_By_Year,
+                                                  manhattan_by_year$New_Shootings_By_Year)
+
+
+# brooklyn
+brooklyn_by_year <- brooklyn %>%
+  mutate(Occur_Year = floor_date(Occur_Month, "year"))
+
+brooklyn_by_year <- brooklyn_by_year %>%
+  group_by(Occur_Year, BORO) %>%
+  top_n(1, Cumulative_Shootings) %>%
+  select(c(Occur_Year, BORO, Cumulative_Shootings)) %>%
+  ungroup()
+
+brooklyn_by_year <- brooklyn_by_year %>%
+  mutate(Cumulative_Shootings_By_Year = Cumulative_Shootings)
+
+brooklyn_by_year <- brooklyn_by_year %>%
+  mutate(New_Shootings_By_Year = Cumulative_Shootings_By_Year - lag(Cumulative_Shootings_By_Year))
+brooklyn_by_year$New_Shootings_By_Year <- ifelse(is.na(brooklyn_by_year$New_Shootings_By_Year), 
+                                                 brooklyn_by_year$Cumulative_Shootings_By_Year,
+                                                 brooklyn_by_year$New_Shootings_By_Year)
+
+# bronx
+bronx_by_year <- bronx %>%
+  mutate(Occur_Year = floor_date(Occur_Month, "year"))
+
+bronx_by_year <- bronx_by_year %>%
+  group_by(Occur_Year, BORO) %>%
+  top_n(1, Cumulative_Shootings) %>%
+  select(c(Occur_Year, BORO, Cumulative_Shootings)) %>%
+  ungroup()
+
+bronx_by_year <- bronx_by_year %>%
+  mutate(Cumulative_Shootings_By_Year = Cumulative_Shootings)
+
+bronx_by_year <- bronx_by_year %>%
+  mutate(New_Shootings_By_Year = Cumulative_Shootings_By_Year - lag(Cumulative_Shootings_By_Year))
+bronx_by_year$New_Shootings_By_Year <- ifelse(is.na(bronx_by_year$New_Shootings_By_Year), 
+                                              bronx_by_year$Cumulative_Shootings_By_Year,
+                                              bronx_by_year$New_Shootings_By_Year)
+
+# staten island
+staten_island_by_year <- staten_island %>%
+  mutate(Occur_Year = floor_date(Occur_Month, "year"))
+
+staten_island_by_year <- staten_island_by_year %>%
+  group_by(Occur_Year, BORO) %>%
+  top_n(1, Cumulative_Shootings) %>%
+  select(c(Occur_Year, BORO, Cumulative_Shootings)) %>%
+  ungroup()
+
+staten_island_by_year <- staten_island_by_year %>%
+  mutate(Cumulative_Shootings_By_Year = Cumulative_Shootings)
+
+staten_island_by_year <- staten_island_by_year %>%
+  mutate(New_Shootings_By_Year = Cumulative_Shootings_By_Year - lag(Cumulative_Shootings_By_Year))
+staten_island_by_year$New_Shootings_By_Year <- ifelse(is.na(staten_island_by_year$New_Shootings_By_Year), 
+                                                      staten_island_by_year$Cumulative_Shootings_By_Year,
+                                                      staten_island_by_year$New_Shootings_By_Year)
+
+```
+
+Here, I grouped the data by year instead of month. I also created a new column
+for new shootings by year.
+
+```{r visualize-third-analysis}
+
+queens_by_year %>% ggplot(aes(x = Occur_Year, y = New_Shootings_By_Year)) +
+  geom_line(aes(color="Queens")) +
+  geom_point(aes(color="Queens")) +
+  
+  geom_line(data=manhattan_by_year, aes(color="Manhattan")) +
+  geom_point(data=manhattan_by_year, aes(color="Manhattan")) +
+  
+  geom_line(data=brooklyn_by_year, aes(color="Brooklyn")) +
+  geom_point(data=brooklyn_by_year, aes(color="Brooklyn")) +
+  
+  geom_line(data=bronx_by_year, aes(color="Bronx")) +
+  geom_point(data=bronx_by_year, aes(color="Bronx")) +
+  
+  geom_line(data=staten_island_by_year, aes(color="Staten Island")) +
+  geom_point(data=staten_island_by_year, aes(color="Staten Island")) +
+  
+  theme(legend.position="bottom") +
+  labs(title="New York City Yearly Shootings by Borough",
+       y="New Yearly Shootings",
+       x="Year")
+
+```
+
+The graphs here are easier on the eyes. We still see that Brooklyn leads the 
+pack.
+
+```{r create-yearly-model-queens}
+
+# queens yearly model
+mod_queens_yearly <- lm(New_Shootings_By_Year ~ Occur_Year, data=queens_by_year)
+summary(mod_queens_yearly)
+
+queens_yearly_w_pred <- queens_by_year %>% mutate(pred = predict(mod_queens_yearly))
+
+queens_yearly_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Year, y = New_Shootings_By_Year), color = "blue") + 
+  geom_point(aes(x = Occur_Year, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Queens New Yearly Shootings: Actual vs Model",
+       y="New Yearly Shootings",
+       x="Year")
+
+```
+
+```{r create-yearly-model-manhattan}
+
+# manhattan yearly model
+mod_manhattan_yearly <- lm(New_Shootings_By_Year ~ Occur_Year, data=manhattan_by_year)
+summary(mod_manhattan_yearly)
+
+manhattan_yearly_w_pred <- manhattan_by_year %>% mutate(pred = predict(mod_manhattan_yearly))
+
+manhattan_yearly_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Year, y = New_Shootings_By_Year), color = "blue") + 
+  geom_point(aes(x = Occur_Year, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Manhattan New Yearly Shootings: Actual vs Model",
+       y="New Yearly Shootings",
+       x="Year")
+
+```
+
+```{r create-yearly-model-brooklyn}
+
+# brooklyn yearly model
+mod_brooklyn_yearly <- lm(New_Shootings_By_Year ~ Occur_Year, data=brooklyn_by_year)
+summary(mod_brooklyn_yearly)
+
+brooklyn_yearly_w_pred <- brooklyn_by_year %>% mutate(pred = predict(mod_brooklyn_yearly))
+
+brooklyn_yearly_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Year, y = New_Shootings_By_Year), color = "blue") + 
+  geom_point(aes(x = Occur_Year, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Brooklyn New Yearly Shootings: Actual vs Model",
+       y="New Yearly Shootings",
+       x="Year")
+
+```
+
+```{r create-yearly-model-bronx}
+
+# bronx yearly model
+mod_bronx_yearly <- lm(New_Shootings_By_Year ~ Occur_Year, data=bronx_by_year)
+summary(mod_bronx_yearly)
+
+bronx_yearly_w_pred <- bronx_by_year %>% mutate(pred = predict(mod_bronx_yearly))
+
+bronx_yearly_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Year, y = New_Shootings_By_Year), color = "blue") + 
+  geom_point(aes(x = Occur_Year, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Bronx New Yearly Shootings: Actual vs Model",
+       y="New Yearly Shootings",
+       x="Year")
+
+```
+
+```{r create-yearly-model-staten-island}
+
+# staten_island yearly model
+mod_staten_island_yearly <- lm(New_Shootings_By_Year ~ Occur_Year, data=staten_island_by_year)
+summary(mod_staten_island_yearly)
+
+staten_island_yearly_w_pred <- staten_island_by_year %>% mutate(pred = predict(mod_staten_island_yearly))
+
+staten_island_yearly_w_pred %>% ggplot() +
+  geom_point(aes(x = Occur_Year, y = New_Shootings_By_Year), color = "blue") + 
+  geom_point(aes(x = Occur_Year, y = pred), color = "red") + 
+  theme(legend.position="bottom",
+       axis.text.x = element_text(angle=90)) +
+  labs(title="Staten Island New Yearly Shootings: Actual vs Model",
+       y="New Yearly Shootings",
+       x="Year")
+
+```
+
+Linear models can now better fit the yearly data. This leads me to believe that
+there are some signals that vary by month rather than by year.
+
+# Conclusion
+
+It appears that there is a general downward trend in the number of shootings in
+New York City. However, there is a sudden increase in the number of shootings in
+2020.
+
+It appears that Brooklyn is the borough with the highest number of shootings.
+Bronx comes in second. Queens has come in third, but its record is much closer
+to that of Manhattan, which came in fourth. Staten Island has come in last for
+the number of shootings, which makes it sound like a good place to live in.
+
+I have heard that New York City had a dark side through scandals from the news.
+I might have heard of some hearsay, like through rap songs, that Queens and 
+Bronx might not be the safest places. I tried to give things a fair shake by 
+trying to visualize how things truly were like, according to the data. I was
+surprised that Brooklyn took the top spot instead, although Bronx took second.
+
+I have also heard that crime could be disproportionately distributed along 
+racial lines. One way I thought about addressing this is to focus on the number
+of shooting incidents according to borough, ignoring the racial information
+about the perpetrators and victims alike.
+
+```{r show-session-info}
+sessionInfo()
+```
+
