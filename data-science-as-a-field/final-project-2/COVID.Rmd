@@ -1,0 +1,621 @@
+---
+title: "COVID Analysis: Philippines vs Japan"
+author: "K. Chu"
+date: "9/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I'm from the Philippines, and I got curious how the situation looks like. 
+However, I have moved to Japan for work, and I'm also curious what the situation
+looks like here. Am I safer here in Japan, or should I go back home to the
+Philippines?
+
+```{r import-data}
+library(tidyverse)
+library(lubridate)
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+filenames <- c("time_series_covid19_confirmed_global.csv",
+               "time_series_covid19_deaths_global.csv",
+               "time_series_covid19_recovered_global.csv")
+urls <- str_c(url_in, filenames)
+global_cases <- read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+global_recoveries <- read_csv(urls[3])
+
+summary(global_cases)
+
+# the tables appear to be very wide; show summary for only global_cases
+# as the structures of global_deaths and global_recoveries are similar
+
+# summary(global_deaths)
+# summary(global_recoveries)
+
+# rename the columns with slashes
+global_cases <- global_cases %>% 
+  rename(Country_Region=`Country/Region`,
+         Province_State=`Province/State`) 
+
+global_deaths <- global_deaths %>% 
+  rename(Country_Region=`Country/Region`,
+         Province_State=`Province/State`) 
+
+global_recoveries <- global_recoveries %>% 
+  rename(Country_Region=`Country/Region`,
+         Province_State=`Province/State`) 
+```
+
+I am getting my data from the Center for Systems Science and Engineering (CSSE)
+at Johns Hopkins University. They have a GitHub repository for global cases, 
+deaths, and recoveries, so I will be using this repository.
+
+The three files here contain a lot of information, but they show a tally of 
+cases or deaths or recoveries per country per day, with each day being a new 
+column. We have a very wide table. Since I want to more easily see the number of
+cases, deaths and recoveries, I will have to transform the data.
+
+Also, since these datasets create wide tables, excuse me as I show the summary 
+of only one of them. Showing the summaries of the other two would take up a lot 
+of space. The other two datasets have a similar structure, with deaths and 
+recoveries taking the place of cases in their respective datasets.
+
+However, for recoveries, it appears that we don't have recorded data past August
+4, 2021, as we get 0s from August 5, 2021 onward. I will also have to address 
+this in my transformation.
+
+```{r set-recoveries-last-available-date}
+recoveries_last_available_date <- "2021-08-04"
+```
+
+```{r get-ph-data}
+# get philippine cases
+ph_cases <- global_cases %>% 
+  filter(Country_Region == "Philippines") %>%
+  pivot_longer(cols= -c(Province_State,
+                        Country_Region,
+                        Lat,
+                        Long),
+               names_to="date",
+               values_to="cases") %>%
+  select(-c(Lat, Long))
+
+summary(ph_cases)
+
+# get philippine deaths
+ph_deaths <- global_deaths %>% 
+  filter(Country_Region == "Philippines") %>%
+  pivot_longer(cols= -c(Province_State,
+                        Country_Region,
+                        Lat,
+                        Long),
+               names_to="date",
+               values_to="deaths") %>%
+  select(-c(Lat, Long))
+
+summary(ph_deaths)
+
+# get philippine recoveries
+ph_recoveries <- global_recoveries %>% 
+  filter(Country_Region == "Philippines") %>%
+  pivot_longer(cols= -c(Province_State,
+                        Country_Region,
+                        Lat,
+                        Long),
+               names_to="date",
+               values_to="recoveries") %>%
+  select(-c(Lat, Long))
+
+summary(ph_recoveries)
+
+# combine them into ph_data
+ph_data <- ph_cases %>%
+  full_join(ph_deaths) %>%
+  full_join(ph_recoveries) %>%
+  mutate(date = mdy(date)) %>%
+  filter(cases > 0)
+
+# mark the recoveries as NA past the last available date for recoveries
+ph_data$recoveries <- ifelse(ph_data$date > as.Date(recoveries_last_available_date),
+                             NA,
+                             ph_data$recoveries)
+
+summary(ph_data)
+
+```
+
+Here, I filtered out the data for the Philippines. I also transformed the tables
+using pivot_longer so that I can more easily visualize the data. I joined the
+two tables together so that I can pair the number of cases with the number of 
+deaths. I'm also more interested in seeing things after the Philippines started 
+having cases, so I only retained the rows that had at least one case.
+
+As of this writing, the latest entry was for September 22, 2021, with the number
+of total cases over time being 2,417,419 and the number of total deaths being
+37,228. The number of recoveries, as of August 4, 2021, is 1,528,422.
+
+```{r get-jp-data}
+# get japan cases
+jp_cases <- global_cases %>% 
+  filter(Country_Region == "Japan") %>%
+  pivot_longer(cols= -c(Province_State,
+                        Country_Region,
+                        Lat,
+                        Long),
+               names_to="date",
+               values_to="cases") %>%
+  select(-c(Lat, Long))
+
+summary(jp_cases)
+
+# get japan deaths
+jp_deaths <- global_deaths %>% 
+  filter(Country_Region == "Japan") %>%
+  pivot_longer(cols= -c(Province_State,
+                        Country_Region,
+                        Lat,
+                        Long),
+               names_to="date",
+               values_to="deaths") %>%
+  select(-c(Lat, Long))
+
+summary(jp_deaths)
+
+# get japan recoveries
+jp_recoveries <- global_recoveries %>% 
+  filter(Country_Region == "Japan") %>%
+  pivot_longer(cols= -c(Province_State,
+                        Country_Region,
+                        Lat,
+                        Long),
+               names_to="date",
+               values_to="recoveries") %>%
+  select(-c(Lat, Long))
+
+summary(jp_recoveries)
+
+# combine them all into jp_data
+jp_data <- jp_cases %>%
+  full_join(jp_deaths) %>%
+  full_join(jp_recoveries) %>%
+  mutate(date = mdy(date)) %>%
+  filter(cases > 0)
+
+# mark the recoveries as NA past the last available date for recoveries
+jp_data$recoveries <- ifelse(jp_data$date > as.Date(recoveries_last_available_date),
+                             NA,
+                             jp_data$recoveries)
+
+summary(jp_data)
+
+```
+
+I did the same transformation for the Japanese data. The numbers look better
+here, compared to the Philippines. The number of total cases over time is
+1,685,325 as of September 22, 2021, and the number of total deaths over time
+is 17,348.
+
+The number of recoveries, as of August 4, 2021, is 852,451. This might appear 
+low, but given that the number of cases is relatively low compared to the 
+Philippines, I think that this wouldn't be unexpected.
+
+```{r visualize-ph-cases-and-deaths}
+
+ph_data %>%
+  ggplot(aes(x=date, y=cases)) + 
+  geom_line(aes(color="Cases")) + 
+  geom_point(aes(color="Cases")) + 
+  
+  geom_line(aes(y=deaths, color="Deaths")) + 
+  geom_point(aes(y=deaths, color="Deaths")) +
+  
+  geom_line(aes(y=recoveries, color="Recoveries")) + 
+  geom_point(aes(y=recoveries, color="Recoveries")) +
+  
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="COVID19 Cases, Deaths, and Recoveries in the Philippines", 
+       x="Date",
+       y=NULL)
+
+```
+
+```{r visualize-jp-cases-and-deaths}
+
+jp_data %>%
+  ggplot(aes(x=date, y=cases)) + 
+  geom_line(aes(color="Cases")) + 
+  geom_point(aes(color="Cases")) + 
+  
+  geom_line(aes(y=deaths, color="Deaths")) + 
+  geom_point(aes(y=deaths, color="Deaths")) +
+  
+  geom_line(aes(y=recoveries, color="Recoveries")) + 
+  geom_point(aes(y=recoveries, color="Recoveries")) +
+  
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="COVID19 Cases, Deaths, and Recoveries in Japan", 
+       x="Date",
+       y=NULL)
+
+```
+
+The graphs for both countries appear similar, although there seemed to be a time
+where the cases and deaths for the Philippines stagnated in early 2020. Let's
+see how the two countries measure up when I include their cases in the same 
+graph and do the same for their deaths and their recoveries.
+
+It appears that in both countries, the number of recoveries closely follows the
+number of cases. This is quite good news.
+
+```{r visualize-cases-for-both}
+
+ph_data %>%
+  ggplot(aes(x=date, y=cases)) + 
+  geom_line(aes(color="Philippines")) + 
+  geom_point(aes(color="Philippines")) + 
+  
+  geom_line(data=jp_data, aes(color="Japan")) +
+  geom_point(data=jp_data, aes(color="Japan")) +
+  
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="COVID19 Cases: Philippines vs Japan", 
+       x="Date",
+       y=NULL)
+
+```
+
+For this graph, we can see that the Philippines had a lower case count at the
+start, but it soon overtook Japan. There might have been something to do with 
+the early stagnation of cases. Why was there a stagnation here?
+
+```{r visualize-deaths-for-both}
+
+ph_data %>%
+  ggplot(aes(x=date, y=deaths)) + 
+  geom_line(aes(color="Philippines")) + 
+  geom_point(aes(color="Philippines")) + 
+  
+  geom_line(data=jp_data, aes(color="Japan")) +
+  geom_point(data=jp_data, aes(color="Japan")) +
+  
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="COVID19 Deaths: Philippines vs Japan", 
+       x="Date",
+       y=NULL)
+
+```
+
+The same trend could be seen in this graph for deaths. However, the Philippines
+overtook Japan in the number of deaths much earlier in 2020.
+
+```{r visualize-recoveries-for-both}
+
+ph_data %>%
+  ggplot(aes(x=date, y=recoveries)) + 
+  geom_line(aes(color="Philippines")) + 
+  geom_point(aes(color="Philippines")) + 
+  
+  geom_line(data=jp_data, aes(color="Japan")) +
+  geom_point(data=jp_data, aes(color="Japan")) +
+  
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="COVID19 Recoveries: Philippines vs Japan", 
+       x="Date",
+       y=NULL)
+
+```
+
+The number of recoveries for the Philippines overtook that of Japan around July
+2020. This was to be expected since the Philippines had a higher number of cases
+to begin with.
+
+```{r add-ph-new-cases-deaths-recoveries-columns}
+# add columns for new cases, new deaths, and new recoveries
+ph_data <- ph_data %>%
+  mutate(new_cases=cases - lag(cases),
+         new_deaths=deaths - lag(deaths),
+         new_recoveries=recoveries - lag(recoveries))
+
+ph_data$new_cases <- ifelse(is.na(ph_data$new_cases), 
+                            ph_data$cases,
+                            ph_data$new_cases)
+
+ph_data$new_deaths <- ifelse(is.na(ph_data$new_deaths), 
+                             ph_data$deaths,
+                             ph_data$new_deaths)
+
+ph_data$new_recoveries <- ifelse(is.na(ph_data$new_recoveries), 
+                                 ph_data$recoveries,
+                                 ph_data$new_recoveries)
+
+ph_data %>%
+  ggplot(aes(x=date, y=new_cases)) + 
+  geom_line(aes(color="New Cases")) + 
+  geom_point(aes(color="New Cases")) + 
+  
+  geom_line(aes(y=new_deaths, color="New Deaths")) + 
+  geom_point(aes(y=new_deaths, color="New Deaths")) +
+  
+  geom_line(aes(y=new_recoveries, color="New Recoveries")) + 
+  geom_point(aes(y=new_recoveries, color="New Recoveries")) +
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="New Daily Cases, Deaths, and Recoveries of COVID19 in the Philippines", 
+       x="Date",
+       y=NULL)
+```
+
+I thought of adding columns for new cases, new deaths, and new recoveries. I 
+then wanted to see how these looked like over time.
+
+There appears to be an upward trend, for all three new columns, but the number 
+of new deaths and the number of new recoveries per day appear to 
+vary wildly. Still, I can see an upward trend.
+
+The number of new cases per day appears to be more stable compared to the number
+of new deaths and the number of new recoveries.
+
+```{r add-jp-new-cases-and-deaths-columns}
+# add columns for new cases, new deaths, and new recoveries
+jp_data <- jp_data %>%
+  mutate(new_cases=cases - lag(cases),
+         new_deaths=deaths - lag(deaths),
+         new_recoveries=recoveries - lag(recoveries))
+
+jp_data$new_cases <- ifelse(is.na(jp_data$new_cases), 
+                            jp_data$cases,
+                            jp_data$new_cases)
+
+jp_data$new_deaths <- ifelse(is.na(jp_data$new_deaths), 
+                             jp_data$deaths,
+                             jp_data$new_deaths)
+
+jp_data$new_recoveries <- ifelse(is.na(jp_data$new_recoveries), 
+                                 jp_data$recoveries,
+                                 jp_data$new_recoveries)
+
+jp_data %>%
+  ggplot(aes(x=date, y=new_cases)) + 
+  geom_line(aes(color="New Cases")) + 
+  geom_point(aes(color="New Cases")) + 
+  
+  geom_line(aes(y=new_deaths, color="New Deaths")) + 
+  geom_point(aes(y=new_deaths, color="New Deaths")) +
+  
+  geom_line(aes(y=new_recoveries, color="New Recoveries")) + 
+  geom_point(aes(y=new_recoveries, color="New Recoveries")) +
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="New Daily Cases, Deaths, and Recoveries of COVID19 in Japan", 
+       x="Date",
+       y=NULL)
+```
+
+Japan's case appears to be much different. The number of new cases also appears
+to be on an upward trend, with several surges. The number of new recoveries
+appears to follow the number of new cases closely, although there are times when
+that number dips to zero.
+
+I would like to compare how the two countries measure up with the new columns.
+
+```{r visualize-new-cases-for-both}
+
+ph_data %>%
+  ggplot(aes(x=date, y=new_cases)) + 
+  geom_line(aes(color="Philippines")) + 
+  geom_point(aes(color="Philippines")) + 
+  
+  geom_line(data=jp_data, aes(color="Japan")) +
+  geom_point(data=jp_data, aes(color="Japan")) +
+  
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="New Daily COVID19 Cases: Philippines vs Japan", 
+       x="Date",
+       y=NULL)
+
+```
+
+In general, Japan tends to have fewer new daily cases than the Philippines. The
+Philippines might have fewer cases from time to time, but these periods are 
+shorter compared to when Japan had more new daily cases.
+
+```{r visualize-new-deaths-for-both}
+
+ph_data %>%
+  ggplot(aes(x=date, y=new_deaths)) + 
+  geom_line(aes(color="Philippines")) + 
+  geom_point(aes(color="Philippines")) + 
+  
+  geom_line(data=jp_data, aes(color="Japan")) +
+  geom_point(data=jp_data, aes(color="Japan")) +
+  
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="New Daily COVID19 Deaths: Philippines vs Japan", 
+       x="Date",
+       y=NULL)
+
+```
+
+This graph doesn't look very easy on the eyes. Still, Japan tends to have fewer
+new deaths compared to the Philippines.
+
+```{r visualize-new-recoveries-for-both}
+
+ph_data %>%
+  ggplot(aes(x=date, y=new_recoveries)) + 
+  geom_line(aes(color="Philippines")) + 
+  geom_point(aes(color="Philippines")) + 
+  
+  geom_line(data=jp_data, aes(color="Japan")) +
+  geom_point(data=jp_data, aes(color="Japan")) +
+  
+  scale_y_log10() + 
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="New Daily COVID19 Recoveries: Philippines vs Japan", 
+       x="Date",
+       y=NULL)
+
+```
+
+The number of new recoveries for both countries appear to be tied. There is a
+period where the number of new recoveries vary wildly, with Japan tending to 
+have days where there were no new recoveries while the Philippines tended to 
+have days where the number of new recoveries shot up before coming back down.
+
+```{r add-deaths-to-cases-column}
+ph_data <- ph_data %>%
+  mutate(deaths_to_cases=deaths / cases)
+
+jp_data <- jp_data %>%
+  mutate(deaths_to_cases=deaths / cases)
+  
+```
+
+I think another measure I should look into is the case fatality rate, or the 
+number of deaths divided by the number of cases.
+
+```{r visualize-case-fatality-rates}
+
+ph_data %>%
+  ggplot(aes(x=date, y=deaths_to_cases)) +
+  geom_line(aes(color="Philippines")) + 
+  geom_point(aes(color="Philippines")) +
+  
+  geom_line(data=jp_data, aes(color="Japan")) +
+  geom_point(data=jp_data, aes(color="Japan")) +
+  
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="Case Fatality Rate of COVID19: Philippines vs Japan",
+       x="Date",
+       y=NULL)
+
+```
+
+It didn't look so good for the Philippines at first, but the numbers went back
+down. The case fatality rate for both countries appears to have settled to 
+almost close to 0. Let's take a closer look at things in 2021.
+
+```{r visualize-case-fatality-rates-2021}
+
+# get data from 2021
+ph_data_2021 <- ph_data %>%
+  filter(date >= as.Date("2021-01-01"))
+
+jp_data_2021 <- jp_data %>%
+  filter(date >= as.Date("2021-01-01"))
+
+ph_data_2021 %>%
+  ggplot(aes(x=date, y=deaths_to_cases)) +
+  geom_line(aes(color="Philippines")) + 
+  geom_point(aes(color="Philippines")) +
+  
+  geom_line(data=jp_data_2021, aes(color="Japan")) +
+  geom_point(data=jp_data_2021, aes(color="Japan")) +
+  
+  theme(legend.position="bottom",
+        axis.text.x=element_text(angle=90)) +
+  labs(title="Case Fatality Rate of COVID19 in 2021: Philippines vs Japan",
+       x="Date",
+       y=NULL)
+
+```
+
+According to this graph, the case fatality rates went way down, below 0.02.
+
+The lower bound for the Philippines appears to be 0.015 while it is 0.010 for
+Japan.
+
+This is great since this means that COVID is not particularly fatal. It appears
+that for every 100 cases, I can expect around 1 or 2 deaths in the Philippines
+while I can expect close to 1 death in Japan.
+
+I would like to create a model to see how things would play out in the future.
+I think it's more accurate to use only this year's data with regards to case 
+fatality rate since the outbreak was such a sudden shock to the world last year.
+I think now that the world has had a chance to stabilize somewhat, this year's
+numbers should be more relevant.
+
+```{r model-ph-case-fatality-rate}
+mod_ph <- lm(deaths_to_cases ~ date, data=ph_data_2021)
+summary(mod_ph)
+
+ph_w_pred <- ph_data_2021 %>% mutate(pred = predict(mod_ph))
+
+ph_w_pred %>% ggplot() +
+  geom_point(aes(x=date, y=deaths_to_cases), color="blue") + 
+  geom_point(aes(x=date, y=pred), color="red") +
+  theme(legend.position="bottom",
+        axis.text.x = element_text(angle=90)) +
+  labs(title="Philippine 2021 Case Fatality Rate: Actual vs Model",
+       y="Case Fatality Rate",
+       x="Date")
+  
+```
+
+```{r model-jp-case-fatality-rate}
+mod_jp <- lm(deaths_to_cases ~ date, data=jp_data_2021)
+summary(mod_jp)
+
+jp_w_pred <- jp_data_2021 %>% mutate(pred = predict(mod_jp))
+
+jp_w_pred %>% ggplot() +
+  geom_point(aes(x=date, y=deaths_to_cases), color="blue") + 
+  geom_point(aes(x=date, y=pred), color="red") +
+  theme(legend.position="bottom",
+        axis.text.x = element_text(angle=90)) +
+  labs(title="Japan 2021 Case Fatality Rate: Actual vs Model",
+       y="Case Fatality Rate",
+       x="Date")
+```
+
+Both models predict a downward trend for both countries. This is great news, 
+especially after taking into consideration that my model predicts that the
+ratio of deaths to cases is higher than was observed in September 2021.
+
+# Conclusion
+
+It appears that there is a downward trend in the case fatality rates for both
+countries. The rates for both countries appear to continue going down, as 
+predicted by my models.
+
+It appears that Japan has a slightly lower case fatality rate as of September
+2021. Perhaps it was a good thing for me to have come here, after all. I do miss
+seeing my family, however.
+
+I could only look forward to the day that the numbers say zero. However, this
+may be impossible, and I have to temper my expectations so.
+
+I have heard that age is a comorbidity when it came to COVID. Given that Japan's
+population is aging, I would have expected that Japan's case fatality rate would
+have been higher. However, I should also take into consideration that Japan's
+healthcare system could be superior compared to the Philippines's.
+
+Focusing solely on raw cases, deaths, and recoveries might not paint an accurate
+picture, so I opted to go for a metric like the case fatality rate. This would
+control for the different numbers of cases and deaths.
+
+```{r show-session-info}
+sessionInfo()
+```
+
