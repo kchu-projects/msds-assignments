@@ -1,7 +1,7 @@
 ---
 title: "COVID Analysis: Philippines vs Japan"
 author: "K. Chu"
-date: "9/23/2021"
+date: "9/25/2021"
 output: html_document
 ---
 
@@ -28,12 +28,8 @@ global_deaths <- read_csv(urls[2])
 global_recoveries <- read_csv(urls[3])
 
 summary(global_cases)
-
-# the tables appear to be very wide; show summary for only global_cases
-# as the structures of global_deaths and global_recoveries are similar
-
-# summary(global_deaths)
-# summary(global_recoveries)
+summary(global_deaths)
+summary(global_recoveries)
 
 # rename the columns with slashes
 global_cases <- global_cases %>% 
@@ -56,12 +52,7 @@ deaths, and recoveries, so I will be using this repository.
 The three files here contain a lot of information, but they show a tally of 
 cases or deaths or recoveries per country per day, with each day being a new 
 column. We have a very wide table. Since I want to more easily see the number of
-cases, deaths and recoveries, I will have to transform the data.
-
-Also, since these datasets create wide tables, excuse me as I show the summary 
-of only one of them. Showing the summaries of the other two would take up a lot 
-of space. The other two datasets have a similar structure, with deaths and 
-recoveries taking the place of cases in their respective datasets.
+cases, deaths, and recoveries, I will have to transform the data.
 
 However, for recoveries, it appears that we don't have recorded data past August
 4, 2021, as we get 0s from August 5, 2021 onward. I will also have to address 
@@ -133,9 +124,9 @@ two tables together so that I can pair the number of cases with the number of
 deaths. I'm also more interested in seeing things after the Philippines started 
 having cases, so I only retained the rows that had at least one case.
 
-As of this writing, the latest entry was for September 22, 2021, with the number
-of total cases over time being 2,417,419 and the number of total deaths being
-37,228. The number of recoveries, as of August 4, 2021, is 1,528,422.
+As of this writing, the latest entry was for September 23, 2021, with the number
+of total cases over time being 2,434,753 and the number of total deaths being
+37,405. The number of recoveries, as of August 4, 2021, is 1,528,422.
 
 ```{r get-jp-data}
 # get japan cases
@@ -195,8 +186,8 @@ summary(jp_data)
 
 I did the same transformation for the Japanese data. The numbers look better
 here, compared to the Philippines. The number of total cases over time is
-1,685,325 as of September 22, 2021, and the number of total deaths over time
-is 17,348.
+1,688,929 as of September 23, 2021, and the number of total deaths over time
+is 17,397.
 
 The number of recoveries, as of August 4, 2021, is 852,451. This might appear 
 low, but given that the number of cases is relatively low compared to the 
